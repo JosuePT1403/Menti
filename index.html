@@ -116,18 +116,30 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, serverTimestamp, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase configuration and initialization (Global variables provided by Canvas environment)
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Firebase configuration
+        const firebaseConfig = {
+          apiKey: "AIzaSyDsLwZJPqSdHAYVQZqx0lpOJ9csddUkSwE", // <--- Pega tu valor real aquí
+          authDomain: "taller-finanzas.firebaseapp.com", // <--- Pega tu valor real aquí
+          projectId: "taller-finanzas", // <--- Pega tu valor real aquí
+          storageBucket: "taller-finanzas.firebasestorage.app", // <--- Pega tu valor real aquí
+          messagingSenderId: "735534410774", // <--- Pega tu valor real aquí
+          appId: "1:735534410774:web:031a55063afdcf13451937", // <--- Pega tu valor real aquí
+          measurementId: "G-1QZZPPB90N"
+        };
+
+        // No se usa token de Canvas en Vercel, el presentador también se autentica anónimamente
+        const initialAuthToken = null;
+
+        // Aquí mantenemos el currentQuizId usando el projectId de tu configuración de Firebase
+        let currentQuizId = firebaseConfig.projectId;
+        let baseUrl = window.location.origin + window.location.pathname; // Base URL for QR codes
 
         // Initialize Firebase App and Services
         let app;
         let db;
         let auth;
         let userId = null;
-        let currentQuizId = appId;
-        let baseUrl = window.location.origin + window.location.pathname; // Base URL for QR codes
+
 
         try {
             app = initializeApp(firebaseConfig);
