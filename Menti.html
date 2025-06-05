@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finanzas con Propósito: Taller Interactivo</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- QRious CDN for QR code generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .presenter-dashboard {
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin: 2rem auto;
+        }
+        .participant-view {
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 1.5rem;
+            margin: 2rem auto;
+            max-width: 28rem; /* Equivalent to max-w-md */
+        }
+        input, select, textarea, button {
+            border-radius: 0.375rem; /* rounded-md */
+            transition: all 0.2s ease-in-out;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .btn-primary {
+            background-color: #2563eb; /* blue-600 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background-color: #1d4ed8; /* blue-700 */
+        }
+        .btn-success {
+            background-color: #10b981; /* green-500 */
+            color: white;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+        .btn-success:hover {
+            background-color: #059669; /* green-600 */
+        }
+        .btn-danger {
+            background-color: #ef4444; /* red-500 */
+            color: white;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626; /* red-600 */
+        }
+        .bg-active {
+            background-color: #d1fae5; /* green-100 */
+            border-left: 4px solid #10b981; /* green-500 */
+        }
+        .bg-inactive {
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        .shadow-md {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .shadow-lg {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* Custom styles for participant options */
+        .participant-option-button {
+            border-color: #a5b4fc; /* indigo-300 */
+            color: #4338ca; /* indigo-800 */
+        }
+        .participant-option-button:hover {
+            background-color: #e0e7ff; /* indigo-100 */
+        }
+        .participant-option-button.selected {
+            background-color: #4f46e5; /* indigo-600 */
+            color: white;
+            border-color: #3730a3; /* indigo-700 */
+        }
+        .min-h-dashboard-section {
+            min-height: 200px; /* Adjust as needed */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container" class="min-h-screen bg-gray-100 text-gray-800">
+        <!-- Content will be rendered here by JavaScript -->
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-xl font-semibold text-gray-700">Cargando aplicación...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Firebase modules directly
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, serverTimestamp, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration and initialization (Global variables provided by Canvas environment)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase App and Services
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let currentQuizId = appId;
+        let baseUrl = window.location.origin + window.location.pathname; // Base URL for QR codes
+
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            console.log("Firebase initialized successfully.");
+        } catch (e) {
+            console.error("Error initializing Firebase:", e);
+            document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-700">Error al inicializar Firebase. Consulta la consola para más detalles.</div>';
+        }
+
+        // --- Core Application Logic ---
+
+        // Function to render the Presenter Dashboard
+        function renderPresenterDashboard() {
+            let questions = [];
+            let activeQuestion = null;
+            let responses = [];
+            let selectedOption = null; // For participant view, initially null
+
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="container mx-auto p-6 presenter-dashboard">
+                    <h1 class="text-4xl font-extrabold text-blue-800 mb-6 text-center">Panel del Presentador</h1>
+                    <p class="text-center text-gray-600 mb-8">
+                        ID de la Sesión: <span class="font-mono bg-gray-200 px-2 py-1 rounded">${currentQuizId}</span> (Compartir esto con participantes)
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- Columna de Gestión de Preguntas -->
+                        <div>
+                            <h2 class="text-2xl font-bold text-blue-700 mb-4">Gestionar Preguntas</h2>
+
+                            <!-- Formulario para añadir preguntas -->
+                            <div class="mb-8 p-6 bg-blue-50 rounded-lg shadow-md">
+                                <h3 class="text-xl font-semibold text-blue-700 mb-3">Añadir Nueva Pregunta</h3>
+                                <input
+                                    type="text"
+                                    id="newQuestionText"
+                                    class="w-full p-3 mb-3 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Texto de la pregunta"
+                                />
+                                <select
+                                    id="newQuestionType"
+                                    class="w-full p-3 mb-3 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="multiple_choice">Opción Múltiple</option>
+                                    <option value="text">Texto Abierto</option>
+                                    <option value="word_cloud">Nube de Palabras</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    id="newQuestionOptions"
+                                    class="w-full p-3 mb-3 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Opciones (separadas por coma, ej: Op1, Op2, Op3)"
+                                />
+                                <button
+                                    id="addQuestionButton"
+                                    class="w-full btn-primary rounded-md font-semibold hover:bg-blue-700 transition duration-300 ease-in-out shadow-md"
+                                >
+                                    Añadir Pregunta
+                                </button>
+                            </div>
+
+                            <!-- Lista de preguntas -->
+                            <div class="p-6 bg-gray-50 rounded-lg shadow-md">
+                                <h3 class="text-xl font-semibold text-blue-700 mb-3">Preguntas del Taller</h3>
+                                <ul id="questionsList" class="space-y-3">
+                                    <p class="text-gray-500 italic">Cargando preguntas...</p>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Columna de Pregunta Activa y Resultados -->
+                        <div>
+                            <h2 class="text-2xl font-bold text-blue-700 mb-4">Pregunta Activa y Resultados</h2>
+                            <div class="p-6 bg-purple-50 rounded-lg shadow-md min-h-dashboard-section">
+                                <div id="activeQuestionDisplay" class="text-center">
+                                    <p class="text-gray-500 italic">Ninguna pregunta activa. Activa una pregunta de la lista.</p>
+                                </div>
+                                <canvas id="qrCanvas" class="border border-gray-300 rounded-md shadow-lg mb-6 hidden" width="200" height="200"></canvas>
+                                <p id="participantUrlDisplay" class="text-sm font-mono break-all text-gray-500 text-center hidden"></p>
+                            </div>
+
+                            <div class="mt-8 p-6 bg-yellow-50 rounded-lg shadow-md">
+                                <h3 class="text-xl font-semibold text-yellow-700 mb-3">Respuestas en Tiempo Real</h3>
+                                <div id="responsesDisplay">
+                                    <p class="text-gray-500 italic">Activa una pregunta para ver las respuestas aquí.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p class="text-center text-sm text-gray-500 mt-12">
+                        <span class="font-mono">ID de usuario del presentador: ${userId}</span>
+                    </p>
+                </div>
+            `;
+
+            // DOM elements
+            const newQuestionTextElem = document.getElementById('newQuestionText');
+            const newQuestionTypeElem = document.getElementById('newQuestionType');
+            const newQuestionOptionsElem = document.getElementById('newQuestionOptions');
+            const addQuestionButton = document.getElementById('addQuestionButton');
+            const questionsListElem = document.getElementById('questionsList');
+            const activeQuestionDisplayElem = document.getElementById('activeQuestionDisplay');
+            const qrCanvasElem = document.getElementById('qrCanvas');
+            const participantUrlDisplayElem = document.getElementById('participantUrlDisplay');
+            const responsesDisplayElem = document.getElementById('responsesDisplay');
+
+            // Toggle options input based on question type
+            newQuestionTypeElem.addEventListener('change', () => {
+                if (newQuestionTypeElem.value === 'multiple_choice') {
+                    newQuestionOptionsElem.style.display = 'block';
+                } else {
+                    newQuestionOptionsElem.style.display = 'none';
+                }
+            });
+            // Initial state check
+            newQuestionOptionsElem.style.display = newQuestionTypeElem.value === 'multiple_choice' ? 'block' : 'none';
+
+
+            // --- Firestore Listeners ---
+
+            // Listener for questions
+            const qRef = query(collection(db, 'artifacts', currentQuizId, 'public', 'data', 'questions'), orderBy('order', 'asc'));
+            onSnapshot(qRef, (snapshot) => {
+                questions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderQuestionsList(); // Re-render the list
+                activeQuestion = questions.find(q => q.active);
+                renderActiveQuestionDisplay(); // Update active question display
+            }, (error) => console.error("Error fetching questions:", error));
+
+            // Listener for responses (will be set up dynamically when a question is active)
+            let unsubscribeResponses = null;
+            function setupResponsesListener() {
+                if (unsubscribeResponses) {
+                    unsubscribeResponses(); // Unsubscribe from previous listener
+                }
+                if (activeQuestion) {
+                    const rQ = query(
+                        collection(db, 'artifacts', currentQuizId, 'public', 'data', 'responses'),
+                        where('questionId', '==', activeQuestion.id),
+                        orderBy('timestamp', 'asc')
+                    );
+                    unsubscribeResponses = onSnapshot(rQ, (snapshot) => {
+                        responses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        renderResponsesDisplay();
+                    }, (error) => console.error("Error fetching responses:", error));
+                } else {
+                    responses = [];
+                    renderResponsesDisplay();
+                }
+            }
+
+            // --- Rendering Functions ---
+
+            function renderQuestionsList() {
+                questionsListElem.innerHTML = '';
+                if (questions.length === 0) {
+                    questionsListElem.innerHTML = '<p class="text-gray-500 italic">Aún no hay preguntas añadidas.</p>';
+                    return;
+                }
+                questions.forEach(q => {
+                    const li = document.createElement('li');
+                    li.className = `flex items-center justify-between p-3 rounded-md shadow-sm ${q.active ? 'bg-active' : 'bg-inactive'}`;
+                    li.innerHTML = `
+                        <span class="flex-1 ${q.active ? 'font-semibold text-green-800' : ''}">${q.text} (${q.type === 'multiple_choice' ? 'Múltiple' : q.type === 'word_cloud' ? 'Nube' : 'Texto'})</span>
+                        <div class="flex space-x-2 ml-4">
+                            ${q.active ? `
+                                <button data-id="${q.id}" class="btn-danger rounded-md hover:bg-red-600 transition duration-200 deactivate-btn">Desactivar</button>
+                            ` : `
+                                <button data-id="${q.id}" class="btn-primary rounded-md hover:bg-blue-600 transition duration-200 activate-btn">Activar</button>
+                            `}
+                        </div>
+                    `;
+                    questionsListElem.appendChild(li);
+                });
+
+                // Attach event listeners to new buttons
+                questionsListElem.querySelectorAll('.activate-btn').forEach(button => {
+                    button.addEventListener('click', (event) => handleActivateQuestion(event.target.dataset.id));
+                });
+                questionsListElem.querySelectorAll('.deactivate-btn').forEach(button => {
+                    button.addEventListener('click', (event) => handleDeactivateQuestion(event.target.dataset.id));
+                });
+            }
+
+            function renderActiveQuestionDisplay() {
+                if (activeQuestion) {
+                    activeQuestionDisplayElem.innerHTML = `
+                        <h3 class="text-2xl font-bold text-purple-800 mb-4 text-center">${activeQuestion.text}</h3>
+                        <p class="text-gray-600 mb-4 text-center">Escanea el QR para participar:</p>
+                    `;
+                    qrCanvasElem.classList.remove('hidden');
+                    participantUrlDisplayElem.classList.remove('hidden');
+                    const participantUrl = `${baseUrl}#participant?quizId=${currentQuizId}&questionId=${activeQuestion.id}`;
+                    
+                    console.log("Generating QR for URL:", participantUrl); // Debugging line
+                    console.log("QRious available:", typeof QRious !== 'undefined'); // Debugging line
+
+                    if (typeof QRious !== 'undefined') {
+                        try {
+                            new QRious({
+                                element: qrCanvasElem,
+                                value: participantUrl,
+                                size: 200,
+                                background: 'white',
+                                foreground: 'black',
+                                level: 'H'
+                            });
+                            console.log("QRious object created successfully."); // Debugging line
+                        } catch (qrError) {
+                            console.error("Error creating QRious object:", qrError);
+                            // Fallback to text if QR fails
+                            const ctx = qrCanvasElem.getContext('2d');
+                            ctx.clearRect(0, 0, qrCanvasElem.width, qrCanvasElem.height);
+                            ctx.font = '14px Inter, sans-serif';
+                            ctx.fillStyle = 'red';
+                            ctx.fillText('Error QR. URL:', 10, 50);
+                            ctx.fillText(participantUrl.substring(0, 20) + '...', 10, 70); // Show truncated URL
+                        }
+                    } else {
+                        console.warn("QRious library not loaded. QR code will not display.");
+                        const ctx = qrCanvasElem.getContext('2d');
+                        ctx.clearRect(0, 0, qrCanvasElem.width, qrCanvasElem.height);
+                        ctx.font = '16px Inter, sans-serif';
+                        ctx.fillText('URL: ' + participantUrl, 10, 50);
+                    }
+                    participantUrlDisplayElem.innerHTML = `URL Directa: <a href="${participantUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${participantUrl}</a>`;
+                    setupResponsesListener(); // Start listening for responses to this new active question
+                } else {
+                    activeQuestionDisplayElem.innerHTML = `
+                        <p class="text-gray-500 italic">Ninguna pregunta activa. Activa una pregunta de la lista.</p>
+                    `;
+                    qrCanvasElem.classList.add('hidden');
+                    participantUrlDisplayElem.classList.add('hidden');
+                    setupResponsesListener(); // Stop listening for responses
+                }
+            }
+
+            function renderResponsesDisplay() {
+                if (!activeQuestion || responses.length === 0) {
+                    responsesDisplayElem.innerHTML = '<p class="text-gray-600">No hay respuestas aún.</p>';
+                    return;
+                }
+
+                if (activeQuestion.type === 'multiple_choice') {
+                    const counts = {};
+                    activeQuestion.options.forEach(option => counts[option] = 0); // Initialize counts
+                    responses.forEach(response => {
+                        if (counts[response.response] !== undefined) {
+                            counts[response.response]++;
+                        }
+                    });
+
+                    let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+                    Object.entries(counts).forEach(([option, count]) => {
+                        const percentage = responses.length > 0 ? (count / responses.length) * 100 : 0;
+                        html += `
+                            <div class="p-3 bg-blue-100 rounded-md shadow-sm">
+                                <p class="font-semibold">${option}</p>
+                                <div class="w-full bg-blue-200 rounded-full h-4 mt-2">
+                                    <div class="bg-blue-500 h-4 rounded-full" style="width: ${percentage}%"></div>
+                                </div>
+                                <p class="text-sm text-blue-700 mt-1">${count} votos</p>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    responsesDisplayElem.innerHTML = html;
+                } else if (activeQuestion.type === 'text' || activeQuestion.type === 'word_cloud') {
+                    let html = '<div class="flex flex-wrap gap-2 max-h-60 overflow-y-auto">';
+                    responses.forEach((response) => {
+                        html += `
+                            <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm shadow-sm">
+                                ${response.response}
+                            </span>
+                        `;
+                    });
+                    html += '</div>';
+                    responsesDisplayElem.innerHTML = html;
+                }
+            }
+
+            // --- Event Handlers ---
+
+            addQuestionButton.addEventListener('click', async () => {
+                const newQuestionText = newQuestionTextElem.value.trim();
+                const newQuestionType = newQuestionTypeElem.value;
+                const newQuestionOptions = newQuestionOptionsElem.value.trim();
+
+                if (!newQuestionText) {
+                    // Using a custom modal UI for alerts as per instructions
+                    displayMessage('Error: Por favor, ingresa el texto de la pregunta.');
+                    return;
+                }
+
+                const newQuestion = {
+                    text: newQuestionText,
+                    type: newQuestionType,
+                    order: questions.length + 1,
+                    active: false,
+                    createdAt: serverTimestamp(),
+                    quizId: currentQuizId,
+                };
+
+                if (newQuestionType === 'multiple_choice' && newQuestionOptions) {
+                    newQuestion.options = newQuestionOptions.split(',').map(opt => opt.trim());
+                } else if (newQuestionType === 'multiple_choice' && !newQuestionOptions) {
+                    displayMessage('Error: Para preguntas de opción múltiple, por favor ingresa las opciones.');
+                    return;
+                }
+
+                try {
+                    await addDoc(collection(db, 'artifacts', currentQuizId, 'public', 'data', 'questions'), newQuestion);
+                    newQuestionTextElem.value = '';
+                    newQuestionOptionsElem.value = '';
+                    displayMessage('Pregunta añadida correctamente.', 'success');
+                } catch (e) {
+                    console.error("Error adding question:", e);
+                    displayMessage('Error al añadir la pregunta. Consulta la consola.', 'error');
+                }
+            });
+
+            async function handleActivateQuestion(questionId) {
+                try {
+                    // Deactivate current active question first
+                    if (activeQuestion && activeQuestion.id !== questionId) {
+                        await updateDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', activeQuestion.id), { active: false });
+                    }
+                    // Activate the selected question
+                    await updateDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', questionId), { active: true });
+                    displayMessage('Pregunta activada.', 'success');
+                } catch (e) {
+                    console.error("Error activating question:", e);
+                    displayMessage('Error al activar la pregunta. Consulta la consola.', 'error');
+                }
+            }
+
+            async function handleDeactivateQuestion(questionId) {
+                try {
+                    await updateDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', questionId), { active: false });
+                    displayMessage('Pregunta desactivada.', 'success');
+                } catch (e) {
+                    console.error("Error deactivating question:", e);
+                    displayMessage('Error al desactivar la pregunta. Consulta la consola.', 'error');
+                }
+            }
+        }
+
+        // Function to render the Participant View
+        function renderParticipantView() {
+            let activeQuestion = null;
+            let currentResponse = '';
+            let submitted = false;
+            let errorMessage = '';
+
+            const appContainer = document.getElementById('app-container');
+            appContainer.innerHTML = `
+                <div class="participant-view mx-auto p-6">
+                    <h1 class="text-3xl font-extrabold text-indigo-800 mb-6 text-center">Participar en el Taller</h1>
+                    <p class="text-center text-gray-600 mb-6">
+                        ID de la Sesión: <span class="font-mono bg-gray-200 px-2 py-1 rounded">${currentQuizId}</span>
+                    </p>
+
+                    <div id="participantContent" class="p-6 bg-indigo-50 rounded-lg shadow-md min-h-dashboard-section">
+                        <p class="text-lg text-gray-700 font-semibold text-center">Esperando que el presentador active una pregunta...</p>
+                        <p class="mt-4 text-sm text-gray-500 text-center">Asegúrate de que tu URL sea correcta o escanea el QR del presentador.</p>
+                    </div>
+
+                    <!-- Hidden button to go back to presenter view for testing/development -->
+                    ${window.location.hash.includes('participant') ? `
+                        <div class="text-center mt-6">
+                            <button id="backToPresenterBtn" class="text-blue-500 hover:underline text-sm">
+                                Volver al panel del presentador
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            const participantContentElem = document.getElementById('participantContent');
+            const backToPresenterBtn = document.getElementById('backToPresenterBtn');
+
+            if (backToPresenterBtn) {
+                backToPresenterBtn.addEventListener('click', () => {
+                    window.location.hash = '#presenter';
+                    // Re-render based on new hash
+                    renderApp();
+                });
+            }
+
+            // Get questionId from URL hash if present
+            const urlParams = new URLSearchParams(window.location.hash.substring(1).split('?')[1]);
+            const questionIdFromUrl = urlParams.get('questionId');
+
+            let unsubscribeQuestion = null;
+
+            // Function to fetch and update active question
+            function fetchActiveQuestion() {
+                if (unsubscribeQuestion) {
+                    unsubscribeQuestion(); // Unsubscribe from previous listener
+                }
+
+                if (questionIdFromUrl) {
+                    // If a specific question ID is provided, just load that one
+                    const qRef = doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', questionIdFromUrl);
+                    unsubscribeQuestion = onSnapshot(qRef, (docSnap) => {
+                        if (docSnap.exists() && docSnap.data().active) {
+                            activeQuestion = { id: docSnap.id, ...docSnap.data() };
+                            submitted = false;
+                            errorMessage = '';
+                            renderParticipantContent();
+                        } else {
+                            activeQuestion = null;
+                            errorMessage = 'La pregunta no está activa o no existe.';
+                            renderParticipantContent();
+                        }
+                    }, (error) => console.error("Error fetching specific question:", error));
+                } else {
+                    // Otherwise, listen for any active question in the quiz
+                    const q = query(collection(db, 'artifacts', currentQuizId, 'public', 'data', 'questions'), where('active', '==', true));
+                    unsubscribeQuestion = onSnapshot(q, (snapshot) => {
+                        if (!snapshot.empty) {
+                            const activeQData = snapshot.docs[0];
+                            activeQuestion = { id: activeQData.id, ...activeQData.data() };
+                            submitted = false;
+                            errorMessage = '';
+                            renderParticipantContent();
+                        } else {
+                            activeQuestion = null;
+                            errorMessage = 'Esperando la siguiente pregunta...';
+                            renderParticipantContent();
+                        }
+                    }, (error) => console.error("Error fetching active question:", error));
+                }
+            }
+
+            fetchActiveQuestion(); // Initial fetch
+
+            function renderParticipantContent() {
+                if (activeQuestion) {
+                    let optionsHtml = '';
+                    if (activeQuestion.type === 'multiple_choice' && activeQuestion.options) {
+                        optionsHtml = `<div class="space-y-3 mb-4">`;
+                        activeQuestion.options.forEach((option, index) => {
+                            optionsHtml += `
+                                <button
+                                    data-option="${option}"
+                                    class="w-full text-left p-3 rounded-md border-2 participant-option-button
+                                        ${currentResponse === option ? 'selected' : ''}
+                                        ${submitted ? 'opacity-60 cursor-not-allowed' : ''}"
+                                    ${submitted ? 'disabled' : ''}
+                                >
+                                    ${option}
+                                </button>
+                            `;
+                        });
+                        optionsHtml += `</div>`;
+                    } else {
+                        optionsHtml = `
+                            <textarea
+                                id="responseTextarea"
+                                class="w-full p-3 mb-4 border border-indigo-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[100px]
+                                    ${submitted ? 'opacity-60 cursor-not-allowed' : ''}"
+                                placeholder="${activeQuestion.type === 'word_cloud' ? 'Escribe una palabra (o varias) para la nube...' : 'Escribe tu respuesta aquí...'}"
+                                ${submitted ? 'disabled' : ''}
+                            >${currentResponse}</textarea>
+                        `;
+                    }
+
+                    participantContentElem.innerHTML = `
+                        <h2 class="text-xl font-bold text-indigo-700 mb-4">${activeQuestion.text}</h2>
+                        ${optionsHtml}
+                        ${errorMessage ? `<p class="text-red-600 text-center mb-3">${errorMessage}</p>` : ''}
+                        <button
+                            id="submitResponseBtn"
+                            class="w-full py-3 rounded-md font-semibold text-white transition duration-300 ease-in-out shadow-md
+                                ${submitted ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}"
+                            ${submitted ? 'disabled' : ''}
+                        >
+                            ${submitted ? '¡Respuesta Enviada!' : 'Enviar Respuesta'}
+                        </button>
+                    `;
+
+                    // Add event listeners after rendering
+                    if (activeQuestion.type === 'multiple_choice') {
+                        participantContentElem.querySelectorAll('.participant-option-button').forEach(button => {
+                            button.addEventListener('click', (event) => {
+                                currentResponse = event.target.dataset.option;
+                                renderParticipantContent(); // Re-render to show selection
+                            });
+                        });
+                    } else {
+                        const responseTextarea = document.getElementById('responseTextarea');
+                        if (responseTextarea) {
+                            responseTextarea.addEventListener('input', (event) => {
+                                currentResponse = event.target.value;
+                            });
+                        }
+                    }
+
+                    const submitResponseBtn = document.getElementById('submitResponseBtn');
+                    if (submitResponseBtn) {
+                        submitResponseBtn.addEventListener('click', handleSubmitResponse);
+                    }
+
+                } else {
+                    participantContentElem.innerHTML = `
+                        <p class="text-lg text-gray-700 font-semibold text-center">${errorMessage || 'Esperando que el presentador active una pregunta...'}</p>
+                        <p class="mt-4 text-sm text-gray-500 text-center">
+                            Asegúrate de que tu URL sea correcta o escanea el QR del presentador.
+                        </p>
+                    `;
+                }
+            }
+
+            async function handleSubmitResponse() {
+                if (!db || !activeQuestion || submitted) return;
+
+                // Client-side validation: Check if user has already responded to this MC question
+                if (activeQuestion.type === 'multiple_choice' && userId) {
+                    const existingResponsesQuery = query(
+                        collection(db, 'artifacts', currentQuizId, 'public', 'data', 'responses'),
+                        where('questionId', '==', activeQuestion.id),
+                        where('userId', '==', userId)
+                    );
+                    const existingResponsesSnapshot = await getDocs(existingResponsesQuery);
+                    if (!existingResponsesSnapshot.empty) {
+                        errorMessage = 'Ya has respondido a esta pregunta.';
+                        submitted = true;
+                        renderParticipantContent();
+                        return;
+                    }
+                }
+
+                if (!currentResponse.trim() && activeQuestion.type !== 'multiple_choice') {
+                    errorMessage = 'Por favor, ingresa una respuesta.';
+                    renderParticipantContent();
+                    return;
+                }
+                if (activeQuestion.type === 'multiple_choice' && !currentResponse.trim()) {
+                    errorMessage = 'Por favor, selecciona una opción.';
+                    renderParticipantContent();
+                    return;
+                }
+
+                const newResponse = {
+                    questionId: activeQuestion.id,
+                    quizId: currentQuizId,
+                    userId: userId || 'anonymous_' + Math.random().toString(36).substring(2, 9), // Fallback for anonymous user
+                    response: currentResponse.trim(),
+                    timestamp: serverTimestamp(),
+                };
+
+                try {
+                    await addDoc(collection(db, 'artifacts', currentQuizId, 'public', 'data', 'responses'), newResponse);
+                    currentResponse = '';
+                    submitted = true;
+                    errorMessage = '';
+                    renderParticipantContent(); // Update UI after submission
+                    displayMessage('¡Tu respuesta ha sido enviada!', 'success');
+                } catch (e) {
+                    console.error("Error submitting response:", e);
+                    errorMessage = 'Error al enviar la respuesta. Intenta de nuevo.';
+                    renderParticipantContent();
+                    displayMessage('Error al enviar la respuesta.', 'error');
+                }
+            }
+        }
+
+        // --- Utility for custom messages instead of alert() ---
+        function displayMessage(message, type = 'info') {
+            const messageBox = document.createElement('div');
+            messageBox.className = `fixed top-4 right-4 p-4 rounded-md shadow-lg text-white z-50`;
+            if (type === 'error') {
+                messageBox.classList.add('bg-red-500');
+            } else if (type === 'success') {
+                messageBox.classList.add('bg-green-500');
+            } else {
+                messageBox.classList.add('bg-blue-500');
+            }
+            messageBox.textContent = message;
+            document.body.appendChild(messageBox);
+            setTimeout(() => {
+                messageBox.remove();
+            }, 3000); // Remove after 3 seconds
+        }
+
+
+        // --- Main Application Flow ---
+
+        // Determine view based on URL hash
+        function renderApp() {
+            const path = window.location.hash.substring(1); // Get hash like #presenter or #participant
+            if (path === 'presenter') {
+                renderPresenterDashboard();
+            } else if (path.startsWith('participant')) {
+                renderParticipantView();
+            } else {
+                // Default to presenter if no hash is present
+                window.location.hash = '#presenter';
+                renderPresenterDashboard();
+            }
+        }
+
+        // Authenticate user and then render the appropriate view
+        window.onload = async function() {
+            console.log("Window loaded. Starting authentication process.");
+            if (auth) {
+                try {
+                    if (initialAuthToken) {
+                        console.log("Signing in with custom token...");
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        console.log("Signing in anonymously...");
+                        await signInAnonymously(auth);
+                    }
+
+                    onAuthStateChanged(auth, (currentUser) => {
+                        if (currentUser) {
+                            userId = currentUser.uid;
+                            console.log("User authenticated:", userId);
+                            renderApp(); // Render the app once authenticated
+                        } else {
+                            // Fallback if auth state changes unexpectedly
+                            console.warn("Auth state changed to null. Re-authenticating anonymously.");
+                            signInAnonymously(auth).then(userCred => {
+                                userId = userCred.user.uid;
+                                console.log("Fallback anonymous auth successful:", userId);
+                                renderApp();
+                            }).catch(e => {
+                                console.error("Fallback anonymous auth failed:", e);
+                                document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-700">No se pudo autenticar al usuario.</div>';
+                            });
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error during authentication:", error);
+                    document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-700">Error durante la autenticación.</div>';
+                }
+            } else {
+                console.error("Firebase Auth no está inicializado. No se puede proceder con la autenticación.");
+                document.getElementById('app-container').innerHTML = '<div class="text-center p-8 text-red-700">Firebase Auth no está disponible.</div>';
+            }
+        };
+
+        // Listen for hash changes to navigate between views
+        window.addEventListener('hashchange', renderApp);
+
+    </script>
+</body>
+</html>
