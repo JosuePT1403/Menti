@@ -118,12 +118,12 @@
 
         // Firebase configuration
         const firebaseConfig = {
-          apiKey: "AIzaSyDsLwZJPqSdHAYVQZqx0lpOJ9csddUkSwE", // <--- Pega tu valor real aquí
-          authDomain: "taller-finanzas.firebaseapp.com", // <--- Pega tu valor real aquí
-          projectId: "taller-finanzas", // <--- Pega tu valor real aquí
-          storageBucket: "taller-finanzas.firebasestorage.app", // <--- Pega tu valor real aquí
-          messagingSenderId: "735534410774", // <--- Pega tu valor real aquí
-          appId: "1:735534410774:web:031a55063afdcf13451937", // <--- Pega tu valor real aquí
+          apiKey: "AIzaSyDsLwZJPqSdHAYVQZqx0lpOJ9csddUkSwE",
+          authDomain: "taller-finanzas.firebaseapp.com",
+          projectId: "taller-finanzas",
+          storageBucket: "taller-finanzas.firebasestorage.app",
+          messagingSenderId: "735534410774",
+          appId: "1:735534410774:web:031a55063afdcf13451937",
           measurementId: "G-1QZZPPB90N"
         };
 
@@ -507,7 +507,7 @@
                     </p>
 
                     <div id="participantContent" class="p-6 bg-indigo-50 rounded-lg shadow-md min-h-dashboard-section">
-                        <p class="text-lg text-gray-700 font-semibold text-center">Esperando que el presentador active una pregunta...</p>
+                        <p class="text-lg text-gray-700 font-semibold text-center">${errorMessage || 'Esperando que el presentador active una pregunta...'}</p>
                         <p class="mt-4 text-sm text-gray-500 text-center">Asegúrate de que tu URL sea correcta o escanea el QR del presentador.</p>
                     </div>
 
