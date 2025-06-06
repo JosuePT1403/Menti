@@ -210,9 +210,15 @@
                         ID de la Sesión: <span class="font-mono bg-gray-200 px-2 py-1 rounded">${currentQuizId}</span> (Compartir esto con participantes)
                     </p>
 
+                    <div class="flex justify-center mb-6">
+                        <button id="toggleQuestionsListBtn" class="btn-primary px-6 py-3">
+                            Ocultar Lista de Preguntas
+                        </button>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <!-- Columna de Gestión de Preguntas -->
-                        <div>
+                        <!-- Columna de Gestión de Preguntas (ocultable) -->
+                        <div id="questionsManagementSection">
                             <h2 class="text-2xl font-bold text-blue-700 mb-4">Gestionar Preguntas</h2>
 
                             <!-- Formulario para añadir/editar preguntas -->
@@ -290,6 +296,8 @@
             `;
 
             // DOM elements
+            const toggleQuestionsListBtn = document.getElementById('toggleQuestionsListBtn');
+            const questionsManagementSection = document.getElementById('questionsManagementSection');
             const questionFormTitleElem = document.getElementById('questionFormTitle');
             const newQuestionTextElem = document.getElementById('newQuestionText');
             const newQuestionTypeElem = document.getElementById('newQuestionType');
@@ -301,6 +309,20 @@
             const qrCanvasElem = document.getElementById('qrCanvas');
             const participantUrlDisplayElem = document.getElementById('participantUrlDisplay');
             const responsesDisplayElem = document.getElementById('responsesDisplay');
+
+            // --- Toggle Questions List Visibility ---
+            let questionsListVisible = true; // Default state
+            toggleQuestionsListBtn.addEventListener('click', () => {
+                questionsListVisible = !questionsListVisible;
+                if (questionsListVisible) {
+                    questionsManagementSection.style.display = 'block'; // Or 'grid' if it's part of a grid layout
+                    toggleQuestionsListBtn.textContent = 'Ocultar Lista de Preguntas';
+                } else {
+                    questionsManagementSection.style.display = 'none';
+                    toggleQuestionsListBtn.textContent = 'Mostrar Lista de Preguntas';
+                }
+            });
+
 
             // Toggle options input based on question type
             newQuestionTypeElem.addEventListener('change', () => {
