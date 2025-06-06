@@ -67,6 +67,15 @@
         .btn-danger:hover {
             background-color: #dc2626; /* red-600 */
         }
+        .btn-edit {
+            background-color: #f59e0b; /* amber-500 */
+            color: white;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+        .btn-edit:hover {
+            background-color: #d97706; /* amber-600 */
+        }
         .bg-active {
             background-color: #d1fae5; /* green-100 */
             border-left: 4px solid #10b981; /* green-500 */
@@ -100,6 +109,35 @@
             justify-content: center;
             align-items: center;
         }
+
+        /* Custom Modal for alerts/confirmations */
+        .custom-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .custom-modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        .custom-modal-buttons {
+            margin-top: 1.5rem;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -114,7 +152,7 @@
         // Import Firebase modules directly
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, serverTimestamp, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, addDoc, serverTimestamp, orderBy, where, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase configuration
         const firebaseConfig = {
@@ -140,6 +178,9 @@
         let auth;
         let userId = null;
 
+        // Global variable to track if we are editing a question
+        let editingQuestionId = null;
+
 
         try {
             app = initializeApp(firebaseConfig);
@@ -158,7 +199,8 @@
             let questions = [];
             let activeQuestion = null;
             let responses = [];
-            let selectedOption = null; // For participant view, initially null
+            // selectedOption is for participant view, not needed here, but kept for consistency if copy-pasted
+            let selectedOption = null; 
 
             const appContainer = document.getElementById('app-container');
             appContainer.innerHTML = `
@@ -173,9 +215,9 @@
                         <div>
                             <h2 class="text-2xl font-bold text-blue-700 mb-4">Gestionar Preguntas</h2>
 
-                            <!-- Formulario para añadir preguntas -->
+                            <!-- Formulario para añadir/editar preguntas -->
                             <div class="mb-8 p-6 bg-blue-50 rounded-lg shadow-md">
-                                <h3 class="text-xl font-semibold text-blue-700 mb-3">Añadir Nueva Pregunta</h3>
+                                <h3 id="questionFormTitle" class="text-xl font-semibold text-blue-700 mb-3">Añadir Nueva Pregunta</h3>
                                 <input
                                     type="text"
                                     id="newQuestionText"
@@ -196,12 +238,20 @@
                                     class="w-full p-3 mb-3 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     placeholder="Opciones (separadas por coma, ej: Op1, Op2, Op3)"
                                 />
-                                <button
-                                    id="addQuestionButton"
-                                    class="w-full btn-primary rounded-md font-semibold hover:bg-blue-700 transition duration-300 ease-in-out shadow-md"
-                                >
-                                    Añadir Pregunta
-                                </button>
+                                <div class="flex space-x-2">
+                                    <button
+                                        id="submitQuestionButton"
+                                        class="flex-1 btn-primary rounded-md font-semibold hover:bg-blue-700 transition duration-300 ease-in-out shadow-md"
+                                    >
+                                        Añadir Pregunta
+                                    </button>
+                                    <button
+                                        id="cancelEditButton"
+                                        class="w-auto px-4 py-2 bg-gray-400 text-white rounded-md font-semibold hover:bg-gray-500 transition duration-300 ease-in-out shadow-md hidden"
+                                    >
+                                        Cancelar Edición
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Lista de preguntas -->
@@ -240,10 +290,12 @@
             `;
 
             // DOM elements
+            const questionFormTitleElem = document.getElementById('questionFormTitle');
             const newQuestionTextElem = document.getElementById('newQuestionText');
             const newQuestionTypeElem = document.getElementById('newQuestionType');
             const newQuestionOptionsElem = document.getElementById('newQuestionOptions');
-            const addQuestionButton = document.getElementById('addQuestionButton');
+            const submitQuestionButton = document.getElementById('submitQuestionButton');
+            const cancelEditButton = document.getElementById('cancelEditButton');
             const questionsListElem = document.getElementById('questionsList');
             const activeQuestionDisplayElem = document.getElementById('activeQuestionDisplay');
             const qrCanvasElem = document.getElementById('qrCanvas');
@@ -291,7 +343,7 @@
                     }, (error) => console.error("Error fetching responses:", error));
                 } else {
                     responses = [];
-                    renderResponsesDisplay();
+                    responsesDisplayElem.innerHTML = '<p class="text-gray-500 italic">Activa una pregunta para ver las respuestas aquí.</p>';
                 }
             }
 
@@ -314,6 +366,8 @@
                             ` : `
                                 <button data-id="${q.id}" class="btn-primary rounded-md hover:bg-blue-600 transition duration-200 activate-btn">Activar</button>
                             `}
+                            <button data-id="${q.id}" class="btn-edit rounded-md hover:bg-amber-600 transition duration-200 edit-btn">Editar</button>
+                            <button data-id="${q.id}" class="btn-danger rounded-md hover:bg-red-600 transition duration-200 delete-btn">Eliminar</button>
                         </div>
                     `;
                     questionsListElem.appendChild(li);
@@ -325,6 +379,12 @@
                 });
                 questionsListElem.querySelectorAll('.deactivate-btn').forEach(button => {
                     button.addEventListener('click', (event) => handleDeactivateQuestion(event.target.dataset.id));
+                });
+                questionsListElem.querySelectorAll('.edit-btn').forEach(button => {
+                    button.addEventListener('click', (event) => handleEditButtonClick(event.target.dataset.id));
+                });
+                questionsListElem.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', (event) => handleDeleteQuestion(event.target.dataset.id));
                 });
             }
 
@@ -425,15 +485,27 @@
                 }
             }
 
-            // --- Event Handlers ---
+            // --- Event Handlers for Add/Update/Edit/Delete ---
 
-            addQuestionButton.addEventListener('click', async () => {
+            // General submit handler for adding or updating questions
+            submitQuestionButton.addEventListener('click', async () => {
+                if (editingQuestionId) {
+                    await handleUpdateQuestion();
+                } else {
+                    await handleAddQuestion();
+                }
+            });
+
+            cancelEditButton.addEventListener('click', () => {
+                resetQuestionForm();
+            });
+
+            async function handleAddQuestion() {
                 const newQuestionText = newQuestionTextElem.value.trim();
                 const newQuestionType = newQuestionTypeElem.value;
                 const newQuestionOptions = newQuestionOptionsElem.value.trim();
 
                 if (!newQuestionText) {
-                    // Using a custom modal UI for alerts as per instructions
                     displayMessage('Error: Por favor, ingresa el texto de la pregunta.');
                     return;
                 }
@@ -441,7 +513,7 @@
                 const newQuestion = {
                     text: newQuestionText,
                     type: newQuestionType,
-                    order: questions.length + 1,
+                    order: questions.length + 1, // Simple ordering
                     active: false,
                     createdAt: serverTimestamp(),
                     quizId: currentQuizId,
@@ -456,14 +528,97 @@
 
                 try {
                     await addDoc(collection(db, 'artifacts', currentQuizId, 'public', 'data', 'questions'), newQuestion);
-                    newQuestionTextElem.value = '';
-                    newQuestionOptionsElem.value = '';
+                    resetQuestionForm();
                     displayMessage('Pregunta añadida correctamente.', 'success');
                 } catch (e) {
                     console.error("Error adding question:", e);
                     displayMessage('Error al añadir la pregunta. Consulta la consola.', 'error');
                 }
-            });
+            }
+
+            async function handleUpdateQuestion() {
+                const updatedQuestionText = newQuestionTextElem.value.trim();
+                const updatedQuestionType = newQuestionTypeElem.value;
+                const updatedQuestionOptions = newQuestionOptionsElem.value.trim();
+
+                if (!updatedQuestionText) {
+                    displayMessage('Error: Por favor, ingresa el texto de la pregunta.');
+                    return;
+                }
+
+                const updatedData = {
+                    text: updatedQuestionText,
+                    type: updatedQuestionType,
+                };
+
+                if (updatedQuestionType === 'multiple_choice' && updatedQuestionOptions) {
+                    updatedData.options = updatedQuestionOptions.split(',').map(opt => opt.trim());
+                } else if (updatedQuestionType === 'multiple_choice' && !updatedQuestionOptions) {
+                    displayMessage('Error: Para preguntas de opción múltiple, por favor ingresa las opciones.');
+                    return;
+                } else {
+                    // If type changed from multiple_choice, clear options field in Firestore
+                    updatedData.options = [];
+                }
+
+                try {
+                    await updateDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', editingQuestionId), updatedData);
+                    resetQuestionForm();
+                    displayMessage('Pregunta actualizada correctamente.', 'success');
+                } catch (e) {
+                    console.error("Error updating question:", e);
+                    displayMessage('Error al actualizar la pregunta. Consulta la consola.', 'error');
+                }
+            }
+
+            function handleEditButtonClick(questionId) {
+                const questionToEdit = questions.find(q => q.id === questionId);
+                if (questionToEdit) {
+                    editingQuestionId = questionId;
+                    questionFormTitleElem.textContent = 'Editar Pregunta';
+                    newQuestionTextElem.value = questionToEdit.text;
+                    newQuestionTypeElem.value = questionToEdit.type;
+                    if (questionToEdit.type === 'multiple_choice' && questionToEdit.options) {
+                        newQuestionOptionsElem.value = questionToEdit.options.join(', ');
+                        newQuestionOptionsElem.style.display = 'block';
+                    } else {
+                        newQuestionOptionsElem.value = '';
+                        newQuestionOptionsElem.style.display = 'none';
+                    }
+                    submitQuestionButton.textContent = 'Actualizar Pregunta';
+                    cancelEditButton.classList.remove('hidden');
+                }
+            }
+
+            function resetQuestionForm() {
+                editingQuestionId = null;
+                questionFormTitleElem.textContent = 'Añadir Nueva Pregunta';
+                newQuestionTextElem.value = '';
+                newQuestionTypeElem.value = 'multiple_choice'; // Reset to default
+                newQuestionOptionsElem.value = '';
+                newQuestionOptionsElem.style.display = 'block'; // Show options for default MC type
+                submitQuestionButton.textContent = 'Añadir Pregunta';
+                cancelEditButton.classList.add('hidden');
+            }
+
+            async function handleDeleteQuestion(questionId) {
+                // Custom confirmation modal
+                showConfirmationModal('¿Estás seguro de que quieres eliminar esta pregunta? Esto borrará todas las respuestas asociadas.',
+                    async () => {
+                        try {
+                            // Deactivate if it's the active question before deleting
+                            if (activeQuestion && activeQuestion.id === questionId) {
+                                await updateDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', questionId), { active: false });
+                            }
+                            await deleteDoc(doc(db, 'artifacts', currentQuizId, 'public', 'data', 'questions', questionId));
+                            displayMessage('Pregunta eliminada correctamente.', 'success');
+                        } catch (e) {
+                            console.error("Error deleting question:", e);
+                            displayMessage('Error al eliminar la pregunta. Consulta la consola.', 'error');
+                        }
+                    }
+                );
+            }
 
             async function handleActivateQuestion(questionId) {
                 try {
@@ -508,30 +663,18 @@
 
                     <div id="participantContent" class="p-6 bg-indigo-50 rounded-lg shadow-md min-h-dashboard-section">
                         <p class="text-lg text-gray-700 font-semibold text-center">${errorMessage || 'Esperando que el presentador active una pregunta...'}</p>
-                        <p class="mt-4 text-sm text-gray-500 text-center">Asegúrate de que tu URL sea correcta o escanea el QR del presentador.</p>
+                        <p class="mt-4 text-sm text-gray-500 text-center">
+                            Asegúrate de que tu URL sea correcta o escanea el QR del presentador.
+                        </p>
                     </div>
-
-                    <!-- Hidden button to go back to presenter view for testing/development -->
-                    ${window.location.hash.includes('participant') ? `
-                        <div class="text-center mt-6">
-                            <button id="backToPresenterBtn" class="text-blue-500 hover:underline text-sm">
-                                Volver al panel del presentador
-                            </button>
-                        </div>
-                    ` : ''}
+                    <!-- The "Back to Presenter" button is intentionally removed from here
+                         to prevent participants from directly navigating to it via the UI. -->
                 </div>
             `;
 
             const participantContentElem = document.getElementById('participantContent');
-            const backToPresenterBtn = document.getElementById('backToPresenterBtn');
+            // backToPresenterBtn and its listeners are removed as per user request for participant view
 
-            if (backToPresenterBtn) {
-                backToPresenterBtn.addEventListener('click', () => {
-                    window.location.hash = '#presenter';
-                    // Re-render based on new hash
-                    renderApp();
-                });
-            }
 
             // Get questionId from URL hash if present
             const urlParams = new URLSearchParams(window.location.hash.substring(1).split('?')[1]);
@@ -712,7 +855,7 @@
             }
         }
 
-        // --- Utility for custom messages instead of alert() ---
+        // --- Utility for custom messages and confirmations ---
         function displayMessage(message, type = 'info') {
             const messageBox = document.createElement('div');
             messageBox.className = `fixed top-4 right-4 p-4 rounded-md shadow-lg text-white z-50`;
@@ -728,6 +871,30 @@
             setTimeout(() => {
                 messageBox.remove();
             }, 3000); // Remove after 3 seconds
+        }
+
+        function showConfirmationModal(message, onConfirm) {
+            const modal = document.createElement('div');
+            modal.className = 'custom-modal';
+            modal.innerHTML = `
+                <div class="custom-modal-content">
+                    <p class="text-lg font-semibold mb-4">${message}</p>
+                    <div class="custom-modal-buttons">
+                        <button id="confirmYes" class="btn-danger">Sí, eliminar</button>
+                        <button id="confirmNo" class="btn-primary">No, cancelar</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            document.getElementById('confirmYes').addEventListener('click', () => {
+                onConfirm();
+                modal.remove();
+            });
+
+            document.getElementById('confirmNo').addEventListener('click', () => {
+                modal.remove();
+            });
         }
 
 
